@@ -10,6 +10,9 @@ __pycache__/
 # MercuryAPI
 mercuryapi/java/
 
+# Java compiled files
+Compiled/
+
 # Test results
 Results/
 
