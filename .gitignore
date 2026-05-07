@@ -9,6 +9,7 @@ __pycache__/
 
 # MercuryAPI
 mercuryapi/java/
+ThingMagic/mercuryapi/java/
 
 # Java compiled files
 Compiled/
