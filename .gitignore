@@ -7,6 +7,12 @@ __pycache__/
 .DS_Store
 */.DS_Store
 
+# MercuryAPI
+mercuryapi/java/
+
+# Test results
+Results/
+
 # C extensions
 *.so
 
