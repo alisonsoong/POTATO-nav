@@ -230,3 +230,14 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Data
+PDR/walks/
+PDR/arkit/
+IMU Characterization/input/
+IMU Characterization/results/
+
+# Xcode user state
+*.xcuserstate
+xcuserdata/
+*.xcuserdata/

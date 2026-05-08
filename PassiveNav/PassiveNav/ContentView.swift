@@ -1,10 +1,26 @@
 import SwiftUI
+import ARKit
 import CoreMotion
 import Combine
 import UniformTypeIdentifiers
+import UIKit
 #if canImport(Charts)
 import Charts
 #endif
+
+enum RecordingIdleTimer {
+    private static var activeRecorders = 0
+
+    static func beginRecording() {
+        activeRecorders += 1
+        UIApplication.shared.isIdleTimerDisabled = true
+    }
+
+    static func endRecording() {
+        activeRecorders = max(0, activeRecorders - 1)
+        UIApplication.shared.isIdleTimerDisabled = activeRecorders > 0
+    }
+}
 
 enum TestType: String, CaseIterable, Codable, Identifiable {
     case staticRest = "Static Rest"
@@ -87,6 +103,114 @@ struct IMUSample: Codable, Identifiable {
     let accelX: Double
     let accelY: Double
     let accelZ: Double
+    let userAccelX: Double?
+    let userAccelY: Double?
+    let userAccelZ: Double?
+    let gravityX: Double?
+    let gravityY: Double?
+    let gravityZ: Double?
+    let roll: Double?
+    let pitch: Double?
+    let yaw: Double?
+    let magneticFieldX: Double?
+    let magneticFieldY: Double?
+    let magneticFieldZ: Double?
+    let magneticFieldAccuracy: Double?
+
+    init(
+        id: UUID,
+        timestamp: TimeInterval,
+        gyroX: Double,
+        gyroY: Double,
+        gyroZ: Double,
+        accelX: Double,
+        accelY: Double,
+        accelZ: Double,
+        userAccelX: Double? = nil,
+        userAccelY: Double? = nil,
+        userAccelZ: Double? = nil,
+        gravityX: Double? = nil,
+        gravityY: Double? = nil,
+        gravityZ: Double? = nil,
+        roll: Double? = nil,
+        pitch: Double? = nil,
+        yaw: Double? = nil,
+        magneticFieldX: Double? = nil,
+        magneticFieldY: Double? = nil,
+        magneticFieldZ: Double? = nil,
+        magneticFieldAccuracy: Double? = nil
+    ) {
+        self.id = id
+        self.timestamp = timestamp
+        self.gyroX = gyroX
+        self.gyroY = gyroY
+        self.gyroZ = gyroZ
+        self.accelX = accelX
+        self.accelY = accelY
+        self.accelZ = accelZ
+        self.userAccelX = userAccelX
+        self.userAccelY = userAccelY
+        self.userAccelZ = userAccelZ
+        self.gravityX = gravityX
+        self.gravityY = gravityY
+        self.gravityZ = gravityZ
+        self.roll = roll
+        self.pitch = pitch
+        self.yaw = yaw
+        self.magneticFieldX = magneticFieldX
+        self.magneticFieldY = magneticFieldY
+        self.magneticFieldZ = magneticFieldZ
+        self.magneticFieldAccuracy = magneticFieldAccuracy
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case timestamp
+        case gyroX
+        case gyroY
+        case gyroZ
+        case accelX
+        case accelY
+        case accelZ
+        case userAccelX
+        case userAccelY
+        case userAccelZ
+        case gravityX
+        case gravityY
+        case gravityZ
+        case roll
+        case pitch
+        case yaw
+        case magneticFieldX
+        case magneticFieldY
+        case magneticFieldZ
+        case magneticFieldAccuracy
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        timestamp = try container.decode(TimeInterval.self, forKey: .timestamp)
+        gyroX = try container.decode(Double.self, forKey: .gyroX)
+        gyroY = try container.decode(Double.self, forKey: .gyroY)
+        gyroZ = try container.decode(Double.self, forKey: .gyroZ)
+        accelX = try container.decode(Double.self, forKey: .accelX)
+        accelY = try container.decode(Double.self, forKey: .accelY)
+        accelZ = try container.decode(Double.self, forKey: .accelZ)
+        userAccelX = try container.decodeIfPresent(Double.self, forKey: .userAccelX)
+        userAccelY = try container.decodeIfPresent(Double.self, forKey: .userAccelY)
+        userAccelZ = try container.decodeIfPresent(Double.self, forKey: .userAccelZ)
+        gravityX = try container.decodeIfPresent(Double.self, forKey: .gravityX)
+        gravityY = try container.decodeIfPresent(Double.self, forKey: .gravityY)
+        gravityZ = try container.decodeIfPresent(Double.self, forKey: .gravityZ)
+        roll = try container.decodeIfPresent(Double.self, forKey: .roll)
+        pitch = try container.decodeIfPresent(Double.self, forKey: .pitch)
+        yaw = try container.decodeIfPresent(Double.self, forKey: .yaw)
+        magneticFieldX = try container.decodeIfPresent(Double.self, forKey: .magneticFieldX)
+        magneticFieldY = try container.decodeIfPresent(Double.self, forKey: .magneticFieldY)
+        magneticFieldZ = try container.decodeIfPresent(Double.self, forKey: .magneticFieldZ)
+        magneticFieldAccuracy = try container.decodeIfPresent(Double.self, forKey: .magneticFieldAccuracy)
+    }
 }
 
 struct TestRun: Codable, Identifiable {
@@ -207,10 +331,31 @@ final class RunStore: ObservableObject {
         lines.append("# started_at,\(run.startedAt.timeIntervalSince1970)")
         lines.append("# ended_at,\(run.endedAt.timeIntervalSince1970)")
         lines.append("# notes,\(run.notes.replacingOccurrences(of: ",", with: ";"))")
-        lines.append("timestamp,gyro_x,gyro_y,gyro_z,accel_x,accel_y,accel_z")
+        lines.append("timestamp,gyro_x,gyro_y,gyro_z,accel_x,accel_y,accel_z,user_accel_x,user_accel_y,user_accel_z,gravity_x,gravity_y,gravity_z,roll,pitch,yaw,mag_x,mag_y,mag_z,mag_accuracy")
         for sample in run.samples {
             lines.append(
-                "\(sample.timestamp),\(sample.gyroX),\(sample.gyroY),\(sample.gyroZ),\(sample.accelX),\(sample.accelY),\(sample.accelZ)"
+                [
+                    sample.timestamp.formattedCSVValue,
+                    sample.gyroX.formattedCSVValue,
+                    sample.gyroY.formattedCSVValue,
+                    sample.gyroZ.formattedCSVValue,
+                    sample.accelX.formattedCSVValue,
+                    sample.accelY.formattedCSVValue,
+                    sample.accelZ.formattedCSVValue,
+                    sample.userAccelX.formattedCSVValue,
+                    sample.userAccelY.formattedCSVValue,
+                    sample.userAccelZ.formattedCSVValue,
+                    sample.gravityX.formattedCSVValue,
+                    sample.gravityY.formattedCSVValue,
+                    sample.gravityZ.formattedCSVValue,
+                    sample.roll.formattedCSVValue,
+                    sample.pitch.formattedCSVValue,
+                    sample.yaw.formattedCSVValue,
+                    sample.magneticFieldX.formattedCSVValue,
+                    sample.magneticFieldY.formattedCSVValue,
+                    sample.magneticFieldZ.formattedCSVValue,
+                    sample.magneticFieldAccuracy.formattedCSVValue
+                ].joined(separator: ",")
             )
         }
         do {
@@ -284,26 +429,56 @@ final class RunStore: ObservableObject {
             throw NSError(domain: "CSVImport", code: 1, userInfo: [NSLocalizedDescriptionKey: "CSV has no sample data."])
         }
 
-        let header = dataLines.removeFirst().lowercased()
-        guard header.contains("timestamp"), header.contains("gyro_x"), header.contains("accel_z") else {
+        let headerColumns = dataLines
+            .removeFirst()
+            .split(separator: ",", omittingEmptySubsequences: false)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+        let headerIndex = Dictionary(uniqueKeysWithValues: headerColumns.enumerated().map { ($1, $0) })
+
+        guard headerIndex["timestamp"] != nil || headerIndex["timestamp_s"] != nil,
+              headerIndex["gyro_x"] != nil,
+              headerIndex["accel_z"] != nil || headerIndex["fused_accel_z"] != nil else {
             throw NSError(domain: "CSVImport", code: 2, userInfo: [NSLocalizedDescriptionKey: "CSV format not recognized."])
         }
 
         var samples: [IMUSample] = []
         samples.reserveCapacity(dataLines.count)
         for line in dataLines {
-            let cols = line.split(separator: ",").map(String.init)
-            guard cols.count >= 7,
-                  let t = Double(cols[0]),
-                  let gx = Double(cols[1]),
-                  let gy = Double(cols[2]),
-                  let gz = Double(cols[3]),
-                  let ax = Double(cols[4]),
-                  let ay = Double(cols[5]),
-                  let az = Double(cols[6]) else {
+            let cols = line.split(separator: ",", omittingEmptySubsequences: false).map(String.init)
+            guard let t = csvDouble(["timestamp", "timestamp_s"], from: cols, headerIndex: headerIndex),
+                  let gx = csvDouble(["gyro_x"], from: cols, headerIndex: headerIndex),
+                  let gy = csvDouble(["gyro_y"], from: cols, headerIndex: headerIndex),
+                  let gz = csvDouble(["gyro_z"], from: cols, headerIndex: headerIndex),
+                  let ax = csvDouble(["accel_x", "fused_accel_x"], from: cols, headerIndex: headerIndex),
+                  let ay = csvDouble(["accel_y", "fused_accel_y"], from: cols, headerIndex: headerIndex),
+                  let az = csvDouble(["accel_z", "fused_accel_z"], from: cols, headerIndex: headerIndex) else {
                 continue
             }
-            samples.append(IMUSample(id: UUID(), timestamp: t, gyroX: gx, gyroY: gy, gyroZ: gz, accelX: ax, accelY: ay, accelZ: az))
+            samples.append(
+                IMUSample(
+                    id: UUID(),
+                    timestamp: t,
+                    gyroX: gx,
+                    gyroY: gy,
+                    gyroZ: gz,
+                    accelX: ax,
+                    accelY: ay,
+                    accelZ: az,
+                    userAccelX: csvDouble(["user_accel_x"], from: cols, headerIndex: headerIndex),
+                    userAccelY: csvDouble(["user_accel_y"], from: cols, headerIndex: headerIndex),
+                    userAccelZ: csvDouble(["user_accel_z"], from: cols, headerIndex: headerIndex),
+                    gravityX: csvDouble(["gravity_x"], from: cols, headerIndex: headerIndex),
+                    gravityY: csvDouble(["gravity_y"], from: cols, headerIndex: headerIndex),
+                    gravityZ: csvDouble(["gravity_z"], from: cols, headerIndex: headerIndex),
+                    roll: csvDouble(["roll"], from: cols, headerIndex: headerIndex),
+                    pitch: csvDouble(["pitch"], from: cols, headerIndex: headerIndex),
+                    yaw: csvDouble(["yaw"], from: cols, headerIndex: headerIndex),
+                    magneticFieldX: csvDouble(["mag_x"], from: cols, headerIndex: headerIndex),
+                    magneticFieldY: csvDouble(["mag_y"], from: cols, headerIndex: headerIndex),
+                    magneticFieldZ: csvDouble(["mag_z"], from: cols, headerIndex: headerIndex),
+                    magneticFieldAccuracy: csvDouble(["mag_accuracy"], from: cols, headerIndex: headerIndex)
+                )
+            )
         }
 
         guard !samples.isEmpty else {
@@ -344,52 +519,125 @@ final class RunStore: ObservableObject {
         guard !diffs.isEmpty else { return 0.01 }
         return diffs.reduce(0, +) / Double(diffs.count)
     }
+
+    private func csvDouble(_ keys: [String], from columns: [String], headerIndex: [String: Int]) -> Double? {
+        for key in keys {
+            guard let index = headerIndex[key], index < columns.count else { continue }
+            let trimmed = columns[index].trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return nil }
+            return Double(trimmed)
+        }
+        return nil
+    }
+
 }
 
 final class MotionRecorder: ObservableObject {
     @Published var isRecording = false
     @Published var elapsedSeconds: TimeInterval = 0
     @Published var sampleCount: Int = 0
+    @Published var arkitFrameCount: Int = 0
+    @Published var arkitTrackingState: String = "Idle"
+    @Published var arkitTrackingReason: String = ""
+    @Published var arkitStatusMessage: String = ""
 
     private let motionManager = CMMotionManager()
     private let queue = OperationQueue()
+    private let arkitPoseRecorder = ARKitPoseRecorder()
     private var startedAt: Date?
+    private var recordingStartUptime: TimeInterval?
     private var timer: Timer?
     private var samples: [IMUSample] = []
     private var currentType: TestType = .staticRest
     private var currentName: String = ""
     private var currentNotes: String = ""
     private var sampleInterval: TimeInterval = 0.02
+    private var recordARKitGroundTruth = false
 
-    func start(type: TestType, name: String, notes: String, sampleInterval: TimeInterval) {
+    var arkitPreviewSession: ARSession {
+        arkitPoseRecorder.previewSession
+    }
+
+    var isRecordingARKitGroundTruth: Bool {
+        recordARKitGroundTruth
+    }
+
+    func start(type: TestType, name: String, notes: String, sampleInterval: TimeInterval, recordARKitGroundTruth: Bool) {
         guard !isRecording else { return }
         guard motionManager.isDeviceMotionAvailable else { return }
+
+        let startDate = Date()
+        let startUptime = ProcessInfo.processInfo.systemUptime
 
         self.currentType = type
         self.currentName = name
         self.currentNotes = notes
         self.sampleInterval = sampleInterval
+        self.recordARKitGroundTruth = false
         self.samples = []
         self.elapsedSeconds = 0
         self.sampleCount = 0
-        self.startedAt = Date()
+        self.arkitFrameCount = 0
+        self.arkitTrackingState = "Idle"
+        self.arkitTrackingReason = ""
+        self.arkitStatusMessage = ""
+        self.startedAt = startDate
+        self.recordingStartUptime = startUptime
         self.isRecording = true
+        RecordingIdleTimer.beginRecording()
+
+        if recordARKitGroundTruth {
+            self.recordARKitGroundTruth = arkitPoseRecorder.start(startedAt: startDate, startUptime: startUptime)
+            if !self.recordARKitGroundTruth {
+                arkitStatusMessage = arkitPoseRecorder.statusMessage
+                arkitTrackingState = arkitPoseRecorder.trackingState
+            }
+        }
 
         queue.maxConcurrentOperationCount = 1
         motionManager.deviceMotionUpdateInterval = sampleInterval
 
-        // Gravity-aligned attitude; yaw from gyro integration only (no magnetometer).
-        motionManager.startDeviceMotionUpdates(using: .xArbitraryZVertical, to: queue) { [weak self] motion, _ in
+        let preferredFrame: CMAttitudeReferenceFrame = CMMotionManager.availableAttitudeReferenceFrames().contains(.xArbitraryCorrectedZVertical)
+            ? .xArbitraryCorrectedZVertical
+            : .xArbitraryZVertical
+
+        motionManager.startDeviceMotionUpdates(using: preferredFrame, to: queue) { [weak self] motion, _ in
             guard let self, let motion, let start = self.startedAt else { return }
+            let timestamp: TimeInterval
+            if self.recordARKitGroundTruth, let recordingStartUptime = self.recordingStartUptime {
+                timestamp = max(0, motion.timestamp - recordingStartUptime)
+            } else {
+                timestamp = Date().timeIntervalSince(start)
+            }
+            let userAccelX = motion.userAcceleration.x
+            let userAccelY = motion.userAcceleration.y
+            let userAccelZ = motion.userAcceleration.z
+            let gravityX = motion.gravity.x
+            let gravityY = motion.gravity.y
+            let gravityZ = motion.gravity.z
+            let magneticField = motion.magneticField.field
             let sample = IMUSample(
                 id: UUID(),
-                timestamp: Date().timeIntervalSince(start),
+                timestamp: timestamp,
                 gyroX: motion.rotationRate.x,
                 gyroY: motion.rotationRate.y,
                 gyroZ: motion.rotationRate.z,
-                accelX: motion.userAcceleration.x + motion.gravity.x,
-                accelY: motion.userAcceleration.y + motion.gravity.y,
-                accelZ: motion.userAcceleration.z + motion.gravity.z
+                accelX: userAccelX + gravityX,
+                accelY: userAccelY + gravityY,
+                accelZ: userAccelZ + gravityZ,
+                userAccelX: userAccelX,
+                userAccelY: userAccelY,
+                userAccelZ: userAccelZ,
+                gravityX: gravityX,
+                gravityY: gravityY,
+                gravityZ: gravityZ,
+                roll: motion.attitude.roll,
+                pitch: motion.attitude.pitch,
+                yaw: motion.attitude.yaw,
+                magneticFieldX: magneticField.x,
+                magneticFieldY: magneticField.y,
+                magneticFieldZ: magneticField.z,
+                magneticFieldAccuracy: Double(motion.magneticField.accuracy.rawValue)
             )
             self.samples.append(sample)
             if self.samples.count % 10 == 0 {
@@ -402,21 +650,31 @@ final class MotionRecorder: ObservableObject {
         timer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
             guard let self, let startedAt = self.startedAt else { return }
             self.elapsedSeconds = Date().timeIntervalSince(startedAt)
+            if self.recordARKitGroundTruth {
+                self.arkitFrameCount = self.arkitPoseRecorder.frameCount
+                self.arkitTrackingState = self.arkitPoseRecorder.trackingState
+                self.arkitTrackingReason = self.arkitPoseRecorder.trackingReason
+                self.arkitStatusMessage = self.arkitPoseRecorder.statusMessage
+            }
         }
     }
 
-    func stop() -> TestRun? {
+    func stop() -> MotionRecorderStopResult? {
         guard isRecording, let startedAt else { return nil }
         let end = Date()
         motionManager.stopDeviceMotionUpdates()
+        let arkitRecording = recordARKitGroundTruth ? arkitPoseRecorder.stop() : nil
         timer?.invalidate()
         timer = nil
         isRecording = false
+        RecordingIdleTimer.endRecording()
         sampleCount = samples.count
+        arkitFrameCount = arkitRecording?.frames.count ?? arkitFrameCount
 
-        return TestRun(
+        let runName = currentName.isEmpty ? "\(currentType.rawValue) \(Self.dateFormatter.string(from: startedAt))" : currentName
+        let imuRun = TestRun(
             id: UUID(),
-            name: currentName.isEmpty ? "\(currentType.rawValue) \(Self.dateFormatter.string(from: startedAt))" : currentName,
+            name: runName,
             type: currentType,
             startedAt: startedAt,
             endedAt: end,
@@ -424,6 +682,26 @@ final class MotionRecorder: ObservableObject {
             notes: currentNotes,
             samples: samples
         )
+
+        let evaluationRun = arkitRecording.map { recording in
+            SensorEvaluationRun(
+                id: UUID(),
+                name: runName,
+                mode: .imuAndARKit,
+                testType: currentType,
+                startedAt: startedAt,
+                endedAt: end,
+                sampleInterval: sampleInterval,
+                notes: currentNotes,
+                timestampBasis: "process_uptime_seconds",
+                recordingStartUptime: recording.startUptime,
+                imuSamples: samples,
+                arkitFrames: recording.frames
+            )
+        }
+
+        recordARKitGroundTruth = false
+        return MotionRecorderStopResult(imuRun: imuRun, evaluationRun: evaluationRun)
     }
 
     private static let dateFormatter: DateFormatter = {
@@ -431,6 +709,23 @@ final class MotionRecorder: ObservableObject {
         formatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
         return formatter
     }()
+}
+
+private extension Optional where Wrapped == Double {
+    var formattedCSVValue: String {
+        switch self {
+        case .some(let value):
+            return value.formattedCSVValue
+        case .none:
+            return ""
+        }
+    }
+}
+
+private extension Double {
+    var formattedCSVValue: String {
+        String(self)
+    }
 }
 
 enum Analyzer {
@@ -525,11 +820,12 @@ enum Analyzer {
 
 struct ContentView: View {
     @StateObject private var store = RunStore()
+    @StateObject private var arkitStore = ARKitEvaluationRunStore()
     @StateObject private var recorder = MotionRecorder()
 
     var body: some View {
         TabView {
-            TestTabView(store: store, recorder: recorder)
+            TestTabView(store: store, arkitStore: arkitStore, recorder: recorder)
                 .tabItem {
                     Label("Tests", systemImage: "record.circle")
                 }
@@ -544,6 +840,11 @@ struct ContentView: View {
                     Label("Results", systemImage: "function")
                 }
 
+            ARKitTabView(store: arkitStore)
+                .tabItem {
+                    Label("ARKit", systemImage: "camera.viewfinder")
+                }
+
             PassiveNavTabView()
                 .tabItem {
                     Label("PassiveNav", systemImage: "figure.walk.motion")
@@ -554,12 +855,14 @@ struct ContentView: View {
 
 struct TestTabView: View {
     @ObservedObject var store: RunStore
+    @ObservedObject var arkitStore: ARKitEvaluationRunStore
     @ObservedObject var recorder: MotionRecorder
 
     @State private var selectedType: TestType = .staticRest
     @State private var runName = ""
     @State private var notes = ""
     @State private var sampleRateHz = 100.0
+    @State private var recordARKitGroundTruth = false
 
     var body: some View {
         NavigationStack {
@@ -588,6 +891,9 @@ struct TestTabView: View {
                     Text("Requested rate. Actual delivered rate may be capped by iOS/device hardware.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+
+                    Toggle("Record ARKit ground truth", isOn: $recordARKitGroundTruth)
+                        .disabled(recorder.isRecording)
                 }
 
                 Section("Recorder") {
@@ -609,11 +915,33 @@ struct TestTabView: View {
                         Text("\(recorder.sampleCount)")
                             .monospacedDigit()
                     }
+                    if recordARKitGroundTruth || recorder.arkitFrameCount > 0 {
+                        HStack {
+                            Text("ARKit frames")
+                            Spacer()
+                            Text("\(recorder.arkitFrameCount)")
+                                .monospacedDigit()
+                        }
+                        HStack {
+                            Text("ARKit tracking")
+                            Spacer()
+                            Text(recorder.arkitTrackingReason.isEmpty ? recorder.arkitTrackingState : "\(recorder.arkitTrackingState): \(recorder.arkitTrackingReason)")
+                                .foregroundStyle(.secondary)
+                        }
+                        if !recorder.arkitStatusMessage.isEmpty {
+                            Text(recorder.arkitStatusMessage)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
 
                     if recorder.isRecording {
                         Button("Stop and Save Run") {
-                            if let run = recorder.stop() {
-                                store.saveRun(run)
+                            if let result = recorder.stop() {
+                                store.saveRun(result.imuRun)
+                                if let evaluationRun = result.evaluationRun {
+                                    arkitStore.saveRun(evaluationRun)
+                                }
                                 runName = ""
                                 notes = ""
                             }
@@ -625,8 +953,27 @@ struct TestTabView: View {
                                 type: selectedType,
                                 name: runName,
                                 notes: notes,
-                                sampleInterval: 1.0 / sampleRateHz
+                                sampleInterval: 1.0 / sampleRateHz,
+                                recordARKitGroundTruth: recordARKitGroundTruth
                             )
+                        }
+                    }
+                }
+
+                if recordARKitGroundTruth || recorder.isRecordingARKitGroundTruth || recorder.arkitFrameCount > 0 {
+                    Section("ARKit Camera Preview") {
+                        ZStack {
+                            ARKitCameraPreviewView(session: recorder.arkitPreviewSession)
+                                .frame(height: 260)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                            if !recorder.isRecordingARKitGroundTruth {
+                                Text("Camera preview starts when ARKit recording starts")
+                                    .font(.caption)
+                                    .padding(8)
+                                    .background(.thinMaterial)
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                            }
                         }
                     }
                 }
