@@ -6,7 +6,10 @@ import UIKit
 
 struct ARKitPoseSample: Codable, Identifiable {
     let id: UUID
+    /// Seconds since ARKit session start (uptime-based normalization; legacy column `timestamp_s` in bundle CSV).
     let timestamp: TimeInterval
+    /// Wall-clock seconds since Unix epoch when this frame was delivered (align with external logs, e.g. RFID).
+    let unixTimestampS: TimeInterval
     let rawFrameTimestamp: TimeInterval
     let callbackUptime: TimeInterval
     let trackingState: String
@@ -16,6 +19,71 @@ struct ARKitPoseSample: Codable, Identifiable {
     let yM: Double
     let zM: Double
     let yawRad: Double
+
+    enum CodingKeys: String, CodingKey {
+        case id, timestamp, unixTimestampS, rawFrameTimestamp, callbackUptime
+        case trackingState, trackingReason, transformMatrix, xM, yM, zM, yawRad
+    }
+
+    init(
+        id: UUID,
+        timestamp: TimeInterval,
+        unixTimestampS: TimeInterval,
+        rawFrameTimestamp: TimeInterval,
+        callbackUptime: TimeInterval,
+        trackingState: String,
+        trackingReason: String,
+        transformMatrix: [Double],
+        xM: Double,
+        yM: Double,
+        zM: Double,
+        yawRad: Double
+    ) {
+        self.id = id
+        self.timestamp = timestamp
+        self.unixTimestampS = unixTimestampS
+        self.rawFrameTimestamp = rawFrameTimestamp
+        self.callbackUptime = callbackUptime
+        self.trackingState = trackingState
+        self.trackingReason = trackingReason
+        self.transformMatrix = transformMatrix
+        self.xM = xM
+        self.yM = yM
+        self.zM = zM
+        self.yawRad = yawRad
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        timestamp = try c.decode(TimeInterval.self, forKey: .timestamp)
+        unixTimestampS = try c.decodeIfPresent(TimeInterval.self, forKey: .unixTimestampS) ?? 0
+        rawFrameTimestamp = try c.decode(TimeInterval.self, forKey: .rawFrameTimestamp)
+        callbackUptime = try c.decode(TimeInterval.self, forKey: .callbackUptime)
+        trackingState = try c.decode(String.self, forKey: .trackingState)
+        trackingReason = try c.decode(String.self, forKey: .trackingReason)
+        transformMatrix = try c.decode([Double].self, forKey: .transformMatrix)
+        xM = try c.decode(Double.self, forKey: .xM)
+        yM = try c.decode(Double.self, forKey: .yM)
+        zM = try c.decode(Double.self, forKey: .zM)
+        yawRad = try c.decode(Double.self, forKey: .yawRad)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(timestamp, forKey: .timestamp)
+        try c.encode(unixTimestampS, forKey: .unixTimestampS)
+        try c.encode(rawFrameTimestamp, forKey: .rawFrameTimestamp)
+        try c.encode(callbackUptime, forKey: .callbackUptime)
+        try c.encode(trackingState, forKey: .trackingState)
+        try c.encode(trackingReason, forKey: .trackingReason)
+        try c.encode(transformMatrix, forKey: .transformMatrix)
+        try c.encode(xM, forKey: .xM)
+        try c.encode(yM, forKey: .yM)
+        try c.encode(zM, forKey: .zM)
+        try c.encode(yawRad, forKey: .yawRad)
+    }
 }
 
 enum SensorEvaluationRunMode: String, Codable {
@@ -75,6 +143,9 @@ final class ARKitPoseRecorder: NSObject, ObservableObject, ARSessionDelegate {
     @Published private(set) var previewPoints: [ARKitPathPoint] = []
 
     private let session = ARSession()
+    private let latestPoseLock = NSLock()
+    private var latestPoseForSampling: ARKitPoseSample?
+    private var managesIdleTimer = true
     private var startedAt: Date?
     private var startUptime: TimeInterval?
     private var timer: Timer?
@@ -84,7 +155,8 @@ final class ARKitPoseRecorder: NSObject, ObservableObject, ARSessionDelegate {
         session
     }
 
-    func start(startedAt: Date = Date(), startUptime: TimeInterval = ProcessInfo.processInfo.systemUptime) -> Bool {
+    /// - Parameter manageIdleTimer: When embedded in another recorder (e.g. PassiveNav), pass `false` so idle timer is only counted once.
+    func start(startedAt: Date = Date(), startUptime: TimeInterval = ProcessInfo.processInfo.systemUptime, manageIdleTimer: Bool = true) -> Bool {
         guard !isRecording else { return true }
         guard ARWorldTrackingConfiguration.isSupported else {
             statusMessage = "ARKit world tracking is not supported on this device."
@@ -101,8 +173,15 @@ final class ARKitPoseRecorder: NSObject, ObservableObject, ARSessionDelegate {
         self.trackingState = "Starting"
         self.trackingReason = ""
         self.statusMessage = ""
+        self.managesIdleTimer = manageIdleTimer
         self.isRecording = true
-        RecordingIdleTimer.beginRecording()
+        if manageIdleTimer {
+            RecordingIdleTimer.beginRecording()
+        }
+
+        latestPoseLock.lock()
+        latestPoseForSampling = nil
+        latestPoseLock.unlock()
 
         session.delegate = self
         let configuration = ARWorldTrackingConfiguration()
@@ -124,7 +203,12 @@ final class ARKitPoseRecorder: NSObject, ObservableObject, ARSessionDelegate {
         timer?.invalidate()
         timer = nil
         isRecording = false
-        RecordingIdleTimer.endRecording()
+        if managesIdleTimer {
+            RecordingIdleTimer.endRecording()
+        }
+        latestPoseLock.lock()
+        latestPoseForSampling = nil
+        latestPoseLock.unlock()
         frameCount = frames.count
 
         return ARKitPoseRecording(
@@ -133,6 +217,13 @@ final class ARKitPoseRecorder: NSObject, ObservableObject, ARSessionDelegate {
             startUptime: startUptime,
             frames: frames
         )
+    }
+
+    /// Latest ARKit camera pose for cross-sensor sampling (thread-safe). Timestamps are seconds since `startUptime` passed to `start`.
+    func latestARKitSnapshot() -> ARKitPoseSample? {
+        latestPoseLock.lock()
+        defer { latestPoseLock.unlock() }
+        return latestPoseForSampling
     }
 
     func session(_ session: ARSession, didUpdate frame: ARFrame) {
@@ -146,9 +237,11 @@ final class ARKitPoseRecorder: NSObject, ObservableObject, ARSessionDelegate {
         )
         let transform = frame.camera.transform
         let tracking = Self.trackingLabels(for: frame.camera.trackingState)
+        let unixTs = Date().timeIntervalSince1970
         let sample = ARKitPoseSample(
             id: UUID(),
             timestamp: timestamp,
+            unixTimestampS: unixTs,
             rawFrameTimestamp: rawTimestamp,
             callbackUptime: callbackUptime,
             trackingState: tracking.state,
@@ -159,6 +252,10 @@ final class ARKitPoseRecorder: NSObject, ObservableObject, ARSessionDelegate {
             zM: Double(transform.columns.3.z),
             yawRad: Self.yawRadians(from: transform)
         )
+
+        latestPoseLock.lock()
+        latestPoseForSampling = sample
+        latestPoseLock.unlock()
 
         DispatchQueue.main.async { [weak self] in
             guard let self, self.isRecording else { return }
@@ -185,6 +282,16 @@ final class ARKitPoseRecorder: NSObject, ObservableObject, ARSessionDelegate {
 
     static func pathPoints(from samples: [ARKitPoseSample]) -> [ARKitPathPoint] {
         samples.map { ARKitPathPoint(x: $0.xM, y: -$0.zM) }
+    }
+
+    /// Horizontal (XZ plane) path length in meters from projected ARKit points.
+    static func pathDistanceMeters(points: [ARKitPathPoint]) -> Double? {
+        guard points.count > 1 else { return nil }
+        var distance = 0.0
+        for index in 1..<points.count {
+            distance += hypot(points[index].x - points[index - 1].x, points[index].y - points[index - 1].y)
+        }
+        return distance
     }
 
     static func yawRadians(from transform: simd_float4x4) -> Double {
@@ -339,13 +446,14 @@ final class ARKitEvaluationRunStore: ObservableObject {
 
     private func arkitCSV(for run: SensorEvaluationRun) -> String {
         var lines = [
-            "timestamp_s,raw_frame_timestamp_s,callback_uptime_s,tracking_state,tracking_reason,x_m,y_m,z_m,yaw_rad,m00,m01,m02,m03,m10,m11,m12,m13,m20,m21,m22,m23,m30,m31,m32,m33"
+            "unix_timestamp_s,timestamp_s,raw_frame_timestamp_s,callback_uptime_s,tracking_state,tracking_reason,x_m,y_m,z_m,yaw_rad,m00,m01,m02,m03,m10,m11,m12,m13,m20,m21,m22,m23,m30,m31,m32,m33"
         ]
 
         for frame in run.arkitFrames {
             let matrixValues = frame.transformMatrix.map(\.arkitCSVValue)
             lines.append(
                 ([
+                    frame.unixTimestampS.arkitCSVValue,
                     frame.timestamp.arkitCSVValue,
                     frame.rawFrameTimestamp.arkitCSVValue,
                     frame.callbackUptime.arkitCSVValue,
@@ -608,12 +716,7 @@ struct ARKitTabView: View {
     }
 
     private func pathDistance(points: [ARKitPathPoint]) -> Double? {
-        guard points.count > 1 else { return nil }
-        var distance = 0.0
-        for index in 1..<points.count {
-            distance += hypot(points[index].x - points[index - 1].x, points[index].y - points[index - 1].y)
-        }
-        return distance
+        ARKitPoseRecorder.pathDistanceMeters(points: points)
     }
 
     private static let nameFormatter: DateFormatter = {

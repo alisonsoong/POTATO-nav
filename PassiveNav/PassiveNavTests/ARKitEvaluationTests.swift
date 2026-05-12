@@ -7,6 +7,7 @@ struct ARKitEvaluationTests {
         let sample = ARKitPoseSample(
             id: UUID(),
             timestamp: 1.25,
+            unixTimestampS: 1_700_000_000.0,
             rawFrameTimestamp: 100.25,
             callbackUptime: 100.30,
             trackingState: "normal",
@@ -22,6 +23,7 @@ struct ARKitEvaluationTests {
         let decoded = try JSONDecoder().decode(ARKitPoseSample.self, from: data)
 
         #expect(decoded.timestamp == sample.timestamp)
+        #expect(decoded.unixTimestampS == 1_700_000_000.0)
         #expect(decoded.trackingState == "normal")
         #expect(decoded.xM == 1.0)
         #expect(decoded.zM == -3.0)
@@ -86,6 +88,7 @@ struct ARKitEvaluationTests {
                 ARKitPoseSample(
                     id: UUID(),
                     timestamp: 0,
+                    unixTimestampS: 1,
                     rawFrameTimestamp: 10,
                     callbackUptime: 10,
                     trackingState: "normal",
