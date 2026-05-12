@@ -39,6 +39,18 @@ def build_parser() -> argparse.ArgumentParser:
         default=RFID_MODEL_RSSI,
         help="RFID PF update model: RSSI/proximity anchors, phase-change range hints, or both.",
     )
+    parser.add_argument(
+        "--rssi-weak-dbm",
+        type=float,
+        default=None,
+        help="Override rssi_weak_dbm for RFID strength scaling (optional).",
+    )
+    parser.add_argument(
+        "--rssi-strong-dbm",
+        type=float,
+        default=None,
+        help="Override rssi_strong_dbm for RFID strength scaling (optional).",
+    )
     parser.add_argument("--no-plots", action="store_true", help="Skip trajectory plot generation.")
     parser.add_argument("--video", action="store_true", help="Save an ARKit/PDR/PF/particle simulation video for each eval run.")
     parser.add_argument("--video-fps", type=int, default=12, help="Simulation video frames per second.")
@@ -60,6 +72,8 @@ def main() -> None:
         imu_characterization_path=args.imu_characterization,
         rfid_mode=args.rfid_mode,
         rfid_measurement_model=args.rfid_measurement_model,
+        # rssi_weak_dbm=args.rssi_weak_dbm,
+        # rssi_strong_dbm=args.rssi_strong_dbm,
     )
     calibration_path = out_dir / "calibration.json"
     save_calibration(calibration, calibration_path)
@@ -70,6 +84,28 @@ def main() -> None:
     print(f"Calibration candidates: {calibration.candidate_count}")
     print(f"Calibration RMSE: {calibration.metrics['rmse_m']:.3f} m")
     print(f"Saved calibration: {calibration_path}")
+
+    if not args.no_plots:
+        calibration_result = evaluate_run(
+            args.calibration_dir,
+            tag_map,
+            calibration,
+            imu_characterization_path=args.imu_characterization,
+            rfid_mode=args.rfid_mode,
+            trace_particles=False,
+        )
+        cal_run = calibration_result["run"]
+        cal_pf_result = calibration_result["pf_result"]
+        cal_plot_path = out_dir / f"{cal_run.name.replace(' ', '_')}_calibration_trajectory.png"
+        save_trajectory_plot(
+            cal_plot_path,
+            cal_run.arkit,
+            calibration_result["baseline_points"],
+            cal_pf_result.points,
+            tag_map,
+            title=f"{cal_run.name}: ARKit vs IMU vs RFID+IMU PF (calibration)",
+        )
+        print(f"Saved calibration plot: {cal_plot_path}")
 
     for eval_dir in args.eval_dir:
         result = evaluate_run(

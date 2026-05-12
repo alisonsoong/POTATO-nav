@@ -175,7 +175,9 @@ def run_particle_filter(
             epc = str(record.epc)
             tag_position = tag_positions.get(epc)
             if tag_position is not None:
-                rssi_strength = _rssi_strength(_read_float(record, "rssi"), config)
+                rssi_strength = 1.0
+                if config.rfid_measurement_model == RFID_MODEL_COMBINED:
+                    rssi_strength = _rssi_strength(_read_float(record, "rssi"), config)
                 updated_this_read = False
 
                 if config.rfid_measurement_model in (RFID_MODEL_RSSI, RFID_MODEL_COMBINED):
