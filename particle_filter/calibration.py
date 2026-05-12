@@ -10,7 +10,7 @@ import pandas as pd
 
 from .antenna import apply_antenna_policy, candidate_policies, score_policy
 from .filter import run_particle_filter
-from .loaders import fit_rigid_transform, load_arkit_trajectory, load_rfid_reads, resolve_run_paths
+from .loaders import fit_rigid_transform, load_arkit_trajectory, load_rfid_reads, resolve_run_paths, rotate_translate_points
 from .metrics import path_length, trajectory_metrics
 from .models import ARKitTrajectory, AntennaPolicy, CalibrationResult, MotionData, PFConfig, TagMap
 from .pdr_adapter import imu_only_trajectory, load_motion_steps
@@ -162,6 +162,79 @@ def _initial_step_scale(motion: MotionData, arkit: ARKitTrajectory) -> float:
     return float(np.clip(arkit_len / pdr_len, 0.3, 2.5))
 
 
+def fit_step_scale_to_arkit(
+    motion: MotionData,
+    arkit: ARKitTrajectory,
+    heading_sign: float,
+    heading_offset_rad: float,
+) -> tuple[float, float]:
+    if motion.step_count <= 0:
+        return 1.0, float("inf")
+
+    times, unit_points = imu_only_trajectory(
+        motion,
+        1.0,
+        heading_offset_rad=heading_offset_rad,
+        heading_sign=heading_sign,
+    )
+    if len(times) < 2:
+        return 1.0, float("inf")
+
+    in_range = (times >= arkit.unix_t[0]) & (times <= arkit.unix_t[-1])
+    unit_points = unit_points[in_range]
+    times = times[in_range]
+    if len(times) < 2:
+        return _initial_step_scale(motion, arkit), float("inf")
+
+    target = np.column_stack(
+        [
+            np.interp(times, arkit.unix_t, arkit.points_map[:, 0]),
+            np.interp(times, arkit.unix_t, arkit.points_map[:, 1]),
+        ]
+    )
+    finite = np.isfinite(unit_points).all(axis=1) & np.isfinite(target).all(axis=1)
+    unit_points = unit_points[finite]
+    target = target[finite]
+    if len(unit_points) < 2:
+        return _initial_step_scale(motion, arkit), float("inf")
+
+    denominator = float(np.sum(unit_points * unit_points))
+    if denominator <= 1e-9:
+        return _initial_step_scale(motion, arkit), float("inf")
+
+    scale = float(np.sum(unit_points * target) / denominator)
+    scale = float(np.clip(scale, 0.3, 2.5))
+    residual = unit_points * scale - target
+    rmse = float(np.sqrt(np.mean(np.sum(residual * residual, axis=1))))
+    return scale, rmse
+
+
+def fit_imu_baseline_to_arkit(
+    motion: MotionData,
+    arkit: ARKitTrajectory,
+    heading_signs: tuple[float, ...] = (1.0, -1.0),
+    heading_offsets: tuple[float, ...] = (-0.4, 0.0, 0.4),
+) -> tuple[float, float, float, float]:
+    best_scale = _initial_step_scale(motion, arkit)
+    best_sign = 1.0
+    best_offset = 0.0
+    best_rmse = float("inf")
+    for heading_sign in heading_signs:
+        for heading_offset in heading_offsets:
+            scale, rmse = fit_step_scale_to_arkit(
+                motion,
+                arkit,
+                heading_sign=heading_sign,
+                heading_offset_rad=heading_offset,
+            )
+            if rmse < best_rmse:
+                best_scale = scale
+                best_sign = heading_sign
+                best_offset = heading_offset
+                best_rmse = rmse
+    return best_scale, best_sign, best_offset, best_rmse
+
+
 def _candidate_configs(base_config: PFConfig, motion: MotionData, arkit: ARKitTrajectory) -> List[PFConfig]:
     step_scale = _initial_step_scale(motion, arkit)
     step_scales = sorted({round(float(np.clip(step_scale * factor, 0.3, 2.5)), 5) for factor in (0.85, 1.0, 1.15)})
@@ -223,9 +296,20 @@ def calibrate(
     imu_characterization_path: Path | None = None,
     rfid_mode: str = RFID_MODE_RAW,
     rfid_measurement_model: str = "rssi_anchor",
+    rssi_weak_dbm: float | None = None,
+    rssi_strong_dbm: float | None = None,
 ) -> CalibrationResult:
     run = load_run(calibration_dir, tag_map, imu_characterization_path=imu_characterization_path, rfid_mode=rfid_mode)
-    base_config = PFConfig(particle_count=particle_count, seed=seed, rfid_measurement_model=rfid_measurement_model)
+    base_kwargs: Dict[str, object] = {
+        "particle_count": particle_count,
+        "seed": seed,
+        "rfid_measurement_model": rfid_measurement_model,
+    }
+    if rssi_weak_dbm is not None:
+        base_kwargs["rssi_weak_dbm"] = float(rssi_weak_dbm)
+    if rssi_strong_dbm is not None:
+        base_kwargs["rssi_strong_dbm"] = float(rssi_strong_dbm)
+    base_config = PFConfig(**base_kwargs)
     policies = candidate_policies(run.reads)
     configs = _candidate_configs(base_config, run.motion, run.arkit)
 
@@ -290,6 +374,14 @@ def evaluate_run(
     rfid_mode: str = RFID_MODE_RAW,
     trace_particles: bool = False,
 ) -> Dict[str, object]:
+    raw_run = load_run(
+        run_dir,
+        tag_map,
+        base_step_length_m=calibration.pf_config.base_step_length_m,
+        policy=None,
+        imu_characterization_path=imu_characterization_path,
+        rfid_mode=rfid_mode,
+    )
     run = load_run(
         run_dir,
         tag_map,
@@ -298,11 +390,17 @@ def evaluate_run(
         imu_characterization_path=imu_characterization_path,
         rfid_mode=rfid_mode,
     )
+    baseline_scale, baseline_sign, baseline_offset, _ = fit_imu_baseline_to_arkit(raw_run.motion, raw_run.arkit)
     baseline_times, baseline_points = imu_only_trajectory(
-        run.motion,
-        calibration.pf_config.step_scale_mean,
-        heading_offset_rad=calibration.pf_config.heading_offset_mean_rad,
-        heading_sign=calibration.pf_config.heading_sign,
+        raw_run.motion,
+        baseline_scale,
+        heading_offset_rad=baseline_offset,
+        heading_sign=baseline_sign,
+    )
+    baseline_points = rotate_translate_points(
+        baseline_points,
+        run.arkit.rotation_rad,
+        run.arkit.translation_xy,
     )
     baseline_metrics = _safe_metrics(baseline_times, baseline_points, run.arkit)
 

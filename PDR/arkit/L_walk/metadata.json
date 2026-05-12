@@ -1,0 +1,13 @@
+{
+  "arkitFrameCount" : 586,
+  "durationS" : 10.072072982788086,
+  "endedAt" : "2026-05-08T18:22:44.567Z",
+  "id" : "379890EB-F9C2-4005-8AFE-0EEFB993FE9B",
+  "imuSampleCount" : 0,
+  "mode" : "arkit_only",
+  "name" : "ARKit 2026-05-08_14-22-34",
+  "notes" : "",
+  "recordingStartUptimeS" : 97807.39249879167,
+  "startedAt" : "2026-05-08T18:22:34.495Z",
+  "timestampBasis" : "process_uptime_seconds"
+}

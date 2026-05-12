@@ -4,7 +4,7 @@ set -euo pipefail
 CAL_DIR="Tests/Directional/Test1"
 EVAL_DIR="Tests/Directional/Test2"
 TAG_MAP="particle_filter/epc_to_tag_coordinates.csv"
-OUT_ROOT="particle_filter/results/directional_rssi_sweep"
+OUT_ROOT="particle_filter/results/directional_rssi_sweep2"
 PARTICLES=250
 MODEL="rssi_phase"
 

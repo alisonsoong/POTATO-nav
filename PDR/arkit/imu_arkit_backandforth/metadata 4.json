@@ -1,0 +1,15 @@
+{
+  "arkitFrameCount" : 1174,
+  "durationS" : 19.91592299938202,
+  "endedAt" : "2026-05-08T18:36:56.785Z",
+  "id" : "70BA907D-410A-443C-828F-D0FE1EDD37EE",
+  "imuSampleCount" : 1984,
+  "mode" : "imu_arkit",
+  "name" : "Known Motion 2026-05-08_14-36-36",
+  "notes" : "",
+  "recordingStartUptimeS" : 98649.74956875,
+  "sampleIntervalS" : 0.01,
+  "startedAt" : "2026-05-08T18:36:36.869Z",
+  "testType" : "Known Motion",
+  "timestampBasis" : "process_uptime_seconds"
+}

@@ -72,8 +72,8 @@ def main() -> None:
         imu_characterization_path=args.imu_characterization,
         rfid_mode=args.rfid_mode,
         rfid_measurement_model=args.rfid_measurement_model,
-        # rssi_weak_dbm=args.rssi_weak_dbm,
-        # rssi_strong_dbm=args.rssi_strong_dbm,
+        rssi_weak_dbm=args.rssi_weak_dbm,
+        rssi_strong_dbm=args.rssi_strong_dbm,
     )
     calibration_path = out_dir / "calibration.json"
     save_calibration(calibration, calibration_path)

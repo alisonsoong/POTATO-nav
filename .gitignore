@@ -233,10 +233,10 @@ __marimo__/
 .streamlit/secrets.toml
 
 # Data
-PDR/walks/
-PDR/arkit/
-IMU Characterization/input/
-IMU Characterization/results/
+# PDR/walks/
+# PDR/arkit/
+# IMU Characterization/input/
+# IMU Characterization/results/
 
 !particle_filter/results/
 

@@ -1,0 +1,116 @@
+{
+  "corrections": {
+    "acceleration_filter": {
+      "filter": "butterworth_bandpass_filtfilt",
+      "high_hz": 3.0,
+      "low_hz": 0.5,
+      "order": 2
+    },
+    "gravity_tilt_sanity": {
+      "gravity_available": true,
+      "tilt_max_deg": 14.737647530356659,
+      "tilt_mean_deg": 6.961678683508931,
+      "tilt_std_deg": 2.410449357403636,
+      "warnings": []
+    },
+    "gyro_bias": {
+      "correction_formula": "gyro_axis_bias_corrected = gyro_axis - gyro_bias_axis",
+      "gyro_bias_source": "static_flat_characterization",
+      "gyro_bias_subtracted_rad_per_s": {
+        "x": 9.604430563437442e-06,
+        "y": 4.117263445611267e-05,
+        "z": -9.35640048313265e-06
+      },
+      "gyro_corrected_mean_rad_per_s": {
+        "x": 0.010063693652739404,
+        "y": -0.04547726749524058,
+        "z": -0.3616603108344552
+      },
+      "initial_stationary_segment": {
+        "duration_s": 3.0,
+        "gyro_bias_rad_per_s": {
+          "x": -0.011559127846321578,
+          "y": -0.026858713784656884,
+          "z": -0.008863051773133037
+        },
+        "gyro_std_rms_rad_per_s": 0.2267526956048893,
+        "samples": 299,
+        "usable": false,
+        "user_accel_mag_rms_g": 0.12994452681335175,
+        "warnings": [
+          "Initial segment gyro variation is high; it may not be stationary. Using static-flat characterization gyro bias instead.",
+          "Initial segment user-accel magnitude is high; it may not be stationary. Using static-flat characterization gyro bias instead."
+        ]
+      },
+      "static_flat_characterization_bias_rad_per_s": {
+        "x": 9.604430563437442e-06,
+        "y": 4.117263445611267e-05,
+        "z": -9.35640048313265e-06
+      },
+      "warnings": [
+        "Initial segment gyro variation is high; it may not be stationary. Using static-flat characterization gyro bias instead.",
+        "Initial segment user-accel magnitude is high; it may not be stationary. Using static-flat characterization gyro bias instead."
+      ]
+    },
+    "heading": {
+      "apply_gyro_scale_correction": false,
+      "gyro_z_scale_factor": null,
+      "heading_source_reason": "Bias-corrected gyro integration selected for controlled short PDR turns.",
+      "preferred_heading_source": "gyro",
+      "warnings": []
+    },
+    "magnetometer_policy": {
+      "magnetometer_accuracy_mean": 2.0,
+      "magnetometer_reason": "Magnetometer heading disabled for indoor PDR; use it only if accuracy is consistently high and known-yaw tests validate magnetic heading.",
+      "use_magnetometer_for_heading": false
+    },
+    "step_acceleration_source": {
+      "step_accel_note": "raw user_accel_* used for step detection",
+      "step_accel_source": "user_accel",
+      "subtract_user_accel_bias": false,
+      "use_fused_accel_for_step_detection": false,
+      "use_user_accel_for_step_detection": true,
+      "user_accel_bias_subtracted_g": null,
+      "warnings": []
+    },
+    "yaw_sanity": {
+      "warnings": [
+        "Core Motion yaw wrap detected; yaw_unwrapped was added."
+      ],
+      "yaw_available": true,
+      "yaw_delta_deg": -367.94816509018204,
+      "yaw_drift_deg_per_min": -1268.0572802954318,
+      "yaw_wrap_detected": true
+    }
+  },
+  "input_csv": "PDR/walks/closed_loop.csv",
+  "metadata": {
+    "ended_at": "1778064344.3648682",
+    "notes": "",
+    "run_name": "Closed Loop 2026-05-06_06-45-26",
+    "sample_interval": "0.01",
+    "started_at": "1778064326.930805",
+    "test_type": "Closed Loop"
+  },
+  "output_csv": "PDR/walks/closed_loop_corrected.csv",
+  "pdr_columns": {
+    "gyro_z_bias_corrected": "gyro_z_bias_corrected",
+    "heading": "heading_selected",
+    "heading_gyro_bias_corrected": "heading_gyro_bias_corrected",
+    "step_accel_mag": "step_accel_mag",
+    "step_accel_mag_filtered": "step_accel_mag_filtered",
+    "tilt_deg": "tilt_from_flat_deg",
+    "time_s": "timestamp_relative_s"
+  },
+  "sampling": {
+    "dt_std_s": 0.002087498789300742,
+    "irregular_sampling": true,
+    "median_dt_s": 0.010033011436462402,
+    "sample_rate_hz": 99.67097180471228
+  },
+  "warnings": [
+    "Initial segment gyro variation is high; it may not be stationary. Using static-flat characterization gyro bias instead.",
+    "Initial segment user-accel magnitude is high; it may not be stationary. Using static-flat characterization gyro bias instead.",
+    "Core Motion yaw wrap detected; yaw_unwrapped was added."
+  ]
+}
