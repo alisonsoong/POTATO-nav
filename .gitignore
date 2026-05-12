@@ -238,6 +238,8 @@ PDR/arkit/
 IMU Characterization/input/
 IMU Characterization/results/
 
+!particle_filter/results/
+
 # Xcode user state
 *.xcuserstate
 xcuserdata/

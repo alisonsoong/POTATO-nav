@@ -6,6 +6,16 @@ import pandas as pd
 from scipy.signal import butter, filtfilt, find_peaks
 
 
+TIME_COLUMNS = (
+    "timestamp_relative_s",
+    "elapsed_since_run_start_s",
+    "timestamp_s",
+    "timestamp",
+    "unix_timestamp_s",
+    "cm_motion_timestamp_s",
+)
+
+
 def first_present(df: pd.DataFrame, *candidates: str) -> str:
     for name in candidates:
         if name in df.columns:
@@ -26,6 +36,10 @@ def load_motion_dataframe(csv_path: Path) -> pd.DataFrame:
     return df
 
 
+def first_time_column(df: pd.DataFrame) -> str:
+    return first_present(df, *TIME_COLUMNS)
+
+
 def required_series(df: pd.DataFrame, *candidates: str) -> np.ndarray:
     series = optional_series(df, *candidates)
     if series is None:
@@ -36,7 +50,7 @@ def required_series(df: pd.DataFrame, *candidates: str) -> np.ndarray:
 def load_aligned_series(csv_path: Path, *column_groups: Tuple[str, ...]) -> Tuple[np.ndarray, ...]:
     df = load_motion_dataframe(csv_path)
 
-    time_column = first_present(df, "timestamp_relative_s", "timestamp_s", "timestamp")
+    time_column = first_time_column(df)
     t = pd.to_numeric(df[time_column], errors="coerce").to_numpy()
     series_list = [required_series(df, *group) for group in column_groups]
 
@@ -121,7 +135,7 @@ def detect_steps_from_csv(
     prominence: float = 0.03,
 ) -> Tuple[np.ndarray, np.ndarray, float, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     df = load_motion_dataframe(csv_path)
-    time_column = first_present(df, "timestamp_relative_s", "timestamp_s", "timestamp")
+    time_column = first_time_column(df)
     t = pd.to_numeric(df[time_column], errors="coerce").to_numpy(dtype=float)
 
     prefiltered = optional_series(df, "step_accel_mag_filtered")
